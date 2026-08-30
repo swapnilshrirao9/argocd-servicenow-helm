@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-informer-additional-resources-{{ .Values.instance.name }}
+  labels:
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  resources:
+    {{ if or .Values.additionalResources.resources .Values.kubevirt.enabled }}
+    {{- $resources_oob_raw := fromYamlArray (default "" .Values.additionalResources.resources)  }}
+    {{- $resources_oob_kubevirt_raw := fromYamlArray (default "" .Values.kubevirt.resources)  }}
+    {{- $resources_oob_additional := fromYamlArray (default "" .Values.additionalResources.resources_oob)  }}
+    {{ $resources := concat $resources_oob_raw $resources_oob_kubevirt_raw $resources_oob_additional    | toPrettyJson }}
+    {{ $resources | quote }}
+    {{- /* We force a value since Openshift rejects a ConfigMap with no value */}}
+    {{ else }}
+    {{- $resources_oob_raw := fromYamlArray (default "" .Values.additionalResources.resources)  }}
+    {{- $resources_oob_additional := fromYamlArray (default "" .Values.additionalResources.resources_oob)  }}
+    {{ $resources := concat $resources_oob_raw $resources_oob_additional    | toPrettyJson }}
+    {{ $resources | quote }}
+    {{- end }}
+  mappings:
+    {{ if .Values.additionalResources.mappings }}
+    {{ $mappings := fromYaml .Values.additionalResources.mappings | toPrettyJson }}
+    {{ if or  (contains "error converting YAML to JSON" $mappings) (contains "error unmarshaling JSON" $mappings) }}
+    {{ printf "Invalid value in additionalResources.mappings %s" $mappings | fail }}
+    {{ end }}
+    {{ $mappings | quote }}
+    {{- /* We force a value since Openshift rejects a ConfigMap with no value */}}
+    {{ else }} "{}"
+    {{- end }}
+  mappings_oob:
+    {{- $mappings_oob_raw := fromYaml .Values.additionalResources.mappings_oob  }}
+    {{- $mappings_oob_kubevirt := fromYaml .Values.kubevirt.mappings  }}
+    {{ $mappings_oob := $mappings_oob_raw }}
+    {{ if .Values.kubevirt.enabled }}
+    {{ $mappings_oob = merge $mappings_oob_raw $mappings_oob_kubevirt}}
+    {{ end}}
+    {{ if $mappings_oob }}
+    {{ $mappings_oob := $mappings_oob | toPrettyJson }}
+    {{ if or  (contains "error converting YAML to JSON" $mappings_oob) (contains "error unmarshaling JSON" $mappings_oob) }}
+    {{ printf "Invalid value in additionalResources.mappings_oob %s" $mappings_oob | fail }}
+    {{ end }}
+    {{ $mappings_oob | quote }}
+    {{- /* We force a value since Openshift rejects a ConfigMap with no value */}}
+    {{ else }} "{}"
+    {{- end }}
+  server_attributes:
+    {{ if .Values.additionalResources.server_attributes }}
+    {{ $server_attributes := fromYaml .Values.additionalResources.server_attributes | toPrettyJson }}
+    {{ if or  (contains "error converting YAML to JSON" $server_attributes) (contains "error unmarshaling JSON" $server_attributes) }}
+    {{ printf "Invalid value in additionalResources.server_attributes %s" $server_attributes | fail }}
+    {{ end }}
+    {{ $server_attributes | quote }}
+    {{- /* We force a value since Openshift rejects a ConfigMap with no value */}}
+    {{ else }} "{}"
+    {{- end }}
+

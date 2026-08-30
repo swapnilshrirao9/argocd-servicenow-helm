@@ -1,0 +1,80 @@
+{{ if and .Values.connectionsDiscovery (eq .Values.connectionsDiscovery.installOpenshiftSecurityContextConstraint true)}}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: servicenow-daemonset-scc-{{ .Values.instance.name }}
+  labels:
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{ if eq .Values.connectionsDiscovery.packetCaptureEnabled true }}
+allowHostDirVolumePlugin: true
+{{ else }}
+allowHostDirVolumePlugin: true
+{{ end }}
+allowHostIPC: false
+allowHostNetwork: true
+allowHostPID: false
+allowHostPorts: true
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+{{ if eq .Values.connectionsDiscovery.packetCaptureEnabled true }}
+allowedCapabilities: [ "NET_RAW"]
+{{ end }}
+seccompProfiles:
+  - runtime/default    # allows RuntimeDefault
+requiredDropCapabilities:
+  - ALL
+fsGroup:
+  type: MustRunAs
+groups: []
+readOnlyRootFilesystem: true
+runAsUser:
+  {{ if eq .Values.connectionsDiscovery.packetCaptureEnabled true }}
+  type: RunAsAny
+  {{ else }}
+  type: MustRunAsNonRoot
+  {{ end }}
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+users: []
+volumes:
+  - hostPath
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: servicenow-scc-role-{{ .Values.instance.name }}
+  labels:
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["servicenow-daemonset-scc-{{ .Values.instance.name }}"]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: servicenow-scc-binding-{{ .Values.instance.name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.connectionsDiscovery.daemonsetServiceAccount }}-{{ .Values.instance.name }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: servicenow-scc-role-{{ .Values.instance.name }}
+  apiGroup: rbac.authorization.k8s.io
+{{ end }}

@@ -1,0 +1,64 @@
+{{ if .Values.ibmLicensing.enabled }}
+{{ if .Values.ibmLicensing.createClusterRole }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.ibmLicensing.clusterRole }}-{{.Values.instance.name}}
+  labels:
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+rules:
+  # These are the actual Kubernetes API permissions needed
+  - nonResourceURLs:
+      - "/products"
+      - "/snapshot"
+      - "/bundled_products"
+      - "/services"
+      - "/health"
+      - "/status"
+    verbs:
+      - "get"
+---
+{{ end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.serviceAccount }}-ibm-licensing-{{ .Release.Namespace }}-{{ .Values.instance.name }}
+  labels:
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+{{ if .Values.ibmLicensing.createClusterRole }}
+  name: {{ .Values.ibmLicensing.clusterRole }}-{{.Values.instance.name}}
+{{ else }}
+  name: ibm-licensing-default-reader
+{{ end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount }}-{{ .Values.instance.name }}
+    namespace: {{ .Release.Namespace }}
+{{ if .Values.ibmLicensing.useCaCertificate }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ibm-license-ca-cert
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+stringData:
+  ca.crt: |
+    {{ .Values.ibmLicensing.caCertificate | b64enc }}
+{{ end }}
+{{ end }}

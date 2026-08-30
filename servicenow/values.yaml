@@ -1,123 +1,797 @@
-# Default values for servicenow.
+# Default values for k8s-informer-chart.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
-replicaCount: 1
+# To accept EULA set value to Y. You can read EULA.pdf
+acceptEula: "N"
 
-# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+# The image of the informer program. Change this value if you place the image in your company repository
 image:
-  repository: servicenowdocker/informer_ds
-  # This sets the pull policy for images.
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: "2.9.1"
+  repository: docker.io/servicenowdocker/informer
+  pullPolicy: Always
+  tag: "2.8.3"
+  dsRepository: docker.io/servicenowdocker/informer_ds
+  dsTag: "2.8.3"
 
-# This is for the secretes for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
-imagePullSecrets: []
-# This is to override the chart name.
-nameOverride: ""
-fullnameOverride: ""
+# The service account and role used by the informer program when calling the API server. It should have read access
+# to namespaces, nodes, deployments, replicasets, daemonsets, statefulsets, jobs, cronjobs, pods, services and endpoints
+serviceAccount: servicenow
+clusterRole: servicenow
+role: servicenow
 
-#This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
-serviceAccount:
-  # Specifies whether a service account should be created
-  create: true
-  # Automatically mount a ServiceAccount's API credentials?
-  automount: true
-  # Annotations to add to the service account
-  annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
+# The instance to which the informer reports to
+instance:
+  name:
+  domain: service-now.com
 
-# This is for setting Kubernetes Annotations to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/ 
-podAnnotations: {}
-# This is for setting Kubernetes Labels to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-podLabels: {}
+# If the image is stored in a private repo, the secret name that holds the repo token should be in this secret within the same namespace
+imagePullSecret: k8s-informer-repo-cred
 
-podSecurityContext: {}
-  # fsGroup: 2000
+# the Kubernetes cluster name as should be reflected in the CMDB
+clusterName:
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+# How frequently in minutes by which the informer calls the API server and list all relevant resources. 0 means only during initialization
+resyncMin: 0
 
-# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
-service:
-  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
-  type: ClusterIP
-  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
-  port: 80
-  tartgetPort: 80
-# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
-ingress:
+# The time window in seconds for accumulating changes arriving from the API server before preparing payload to be sent to the instance. Default is 10.
+sendIntervalSec:
+
+# The interval (in seconds) in which the ECC sender may insert records to the ECC queue
+eccSenderIntervalSec: 30
+
+# when the elapsed time of sending ECC message exceeds this number, the informer will assume the instance is loaded and will back off
+maxElapsedTimeMs: 10000
+
+# The maximum number of items in a single accumulated payload. When we reach this number, we prepare the payload for sending and start a new payload
+maxCiInMessage: 150
+
+# If the time between now and the last time the item was reported exceeds this value, we re-send it even if there was no change. 0 means no refresh of idetical items
+refreshTimeMin: 0
+
+# The time interval in minutes for sending to the instance a full inventory of items. Default is 1440.
+fullDiscoveryMin:
+
+# The time interval in seconds during which the informer looks for command coming from the instance
+readCommandSec: 60
+
+# The time interval for sending a payload of the cluster CI, if no other change has happened. Relevant only to the standalone mode
+heartbeatMin: 5
+
+# If access from the cluster to the internet requires a proxy, the proxy URL should be in the format http://proxy_host:proxy_port
+proxyUrl:
+
+# The max allowed size of the in-memory queue holding outgoing messages to the instance in standalone mode. If the queue is overflowed, we start to drop messages
+maxQueueSizeBytes: 262144000
+
+# The retry count on failures to send messages to the instance in standalone mode. If we exceed this number, the message is dropped
+maxRetry: 5
+
+# The maximum size of the payload on a single ECC input message. Relevant to the standalone mode only.
+maxEccPayloadSizeBytes: 1048576
+
+# Should the informer report to the instance on changes in real-time mode. If false, the informer will report only during full-discovery. Default is true.
+continuousDiscovery:
+
+# Should we use the debug version of the base distroless image. This might be needed during testing or debugging when shell access is required
+useDebugImage: false
+
+# The prefix of the secret holding the instance credentials. keys are .user and .password
+instanceCredSecretName: k8s-informer-cred
+
+# CPU requests and limit
+cpuLimit: 500m
+cpuRequest: 100m
+
+# Memory requests
+memoryRequest: 200Mi
+
+# dnsPolicy. See options in https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-s-dns-policy
+dnsPolicy: ClusterFirst
+
+# When true, the informer prints messages per every object processed. Default is false.
+verboseLogging:
+
+# Optional: Set a memory limit for the informer pod (e.g. 200Mi).
+# Recommended value: (Number of monitored pods / 8) Mi, with a minimum of 200Mi.
+# When set, memory pressure monitoring is enabled: if the informer's memory usage exceeds
+# the configured threshold (see memoryPressureThresholdPct), an alert is sent to the instance.
+memoryLimit:
+
+# The memory usage percentage at which a memory pressure alert is sent to the instance.
+# For example, 80 means an alert is triggered when memory usage reaches 80% of memoryLimit.
+# Accepted range: 1–100. Default: 80.
+memoryPressureThresholdPct: 80
+
+# Override this value if you want to use a pre-defined clusterRole and not the one defined by ServiceNow in this helm chart
+customClusterRole:
+
+# Skip certificate validation on the https calls to the ServiceNow instance
+skipTLSCertificateValidation: false
+
+# Should we suppress and not report on frequent changes
+suppressFrequentChanges: true
+
+# Threshold of rate of changes per minute above which changes will be suppressed
+suppressChangesRatePerMin: 0.15
+
+# Start suppressing frequent changes after the change count is above this number
+minChangesSuppressFrequentChanges: 3
+
+# Options: empty value: secrets stored in Kubernetes
+#          aws:  secret is stored in AWS secret manager
+secretProvider: ""
+
+# if AWS Secret manager is used, this should hold the ARN of the role for accessing the secret (e.g. arn:aws:iam::123456789012:role/EKSSecrets)
+awsSecretManagerRoleArn:
+
+# if AWS Secret manager is used, this should hold the secret ARN (e.g. arn:aws:secretsmanager:eu-central-1:123456789012:secret:aws-secrets-7vzPh1)
+awsSecretManagerSecretArn:
+
+# Should be true if informer is installed in OpenShift. Default is false.
+openShift:
+
+# Should the system bring the node labels and annotations to the CMDB
+addNodeLabels: true
+
+# Credentials for accessing ServiceNow's instance. Can be optionally provided in the Helm install command
+instanceCredentials:
+  username:
+  password:
+  # Used in case of OAuth2.0 authentication
+  clientId:
+  # Used in case of OAuth2.0 authentication
+  clientSecret:
+
+oauth:
+  # Used in case of OAuth2.0 authentication with external provider
+  tokenUrl:
+  # Used in case of OAuth2.0 authentication with external provider
+  scopes:
+  # Used in case of OAuth2.0 authentication with external provider. Options are OAUTH_STYLE_HEADER or OAUTH_STYLE_PARAMS. If not provided, the system assumes OAUTH_STYLE_PARAMS
+  style: "OAUTH_STYLE_PARAMS"
+
+# the Kubernetes cloud resource ID, in case the cluster is hosted in EKS, AKS, or GKE
+# Examples:
+# EKS: arn:aws:eks:us-east-1:123456779012:cluster/my-cluster
+# AKS: /subscriptions/061b9311-9c54-4471-9a59-4909517d6f07/resourceGroups/qe_resource_group_donotdelete/providers/Microsoft.ContainerService/managedClusters/qe_k8s_cluster
+clusterResourceId:
+
+# Should the informer create cmdb_ci_linux_server CI per each of the Kubernetes nodes. Default is true.
+createServerCi:
+
+# Populate the serial number of the server using the SystemUUID field on the Kubernetes node
+populateSerialNumberFromSystemUUID: false
+
+additionalResources:
+  # Additional resources the informer should retrieve. Place the required content in a file and use --set-file additionalResources.resources=<file name>.
+  # The format is:
+  # - apiGroups:
+  #   - ""
+  #   apiVersions:
+  #   - v1
+  #   resources:
+  #   - resource1
+  #   - resource2
+  resources:
+  # Additional resources table and field mappings. Place the required content in a file and use --set-file additionalResources.mappings=<file name>.
+  # Example of the file content:
+  # v1/configmaps:
+  #   targetClass: u_cmdb_ci_clusterversion (OPTIONAL FIELD)
+  #   filter: (OPTIONAL FIELD)
+  #     - jsonPath: ".metadata.name"
+  #       regex: ^version$
+  #   fields: (OPTIONAL FIELD)
+  #   - fieldExtractor:
+  #       jsonPath: ".data"
+  #       regex: "(.*)"  (OPTIONAL FIELD)
+  #     name: data
+  #     targetColumn: u_data (OPTIONAL FIELD)
+  resources_oob: |
+    - apiGroups:
+      - gateway.networking.k8s.io
+      apiVersions:
+      - v1
+      resources:
+      - gateways
+      - gatewayclasses
+      - httproutes
+      - tcproutes
+      - udproutes
+      verbs:
+      - get
+      - list
+      - watch
+
+  mappings:
+  # Additional fields extracted on out-of-box resources
+  mappings_oob: |
+    v1/nodes:
+      fields:
+        - fieldExtractor:
+            jsonPath: ".status.nodeInfo"
+          name: node_info
+        - fieldExtractor:
+            jsonPath: ".spec.providerID"
+          name: provider_id
+    v1/services:
+      fields:
+        - fieldExtractor:
+            jsonPath: ".spec.ports[*].nodePort"
+          name: node_ports
+    networking.k8s.io/v1/ingresses:
+      fields:
+        - fieldExtractor:
+            jsonPath: ".spec.rules"
+          name: rules
+    route.openshift.io/v1/routes:
+      fields:
+        - fieldExtractor:
+            jsonPath: ".spec"
+          name: spec
+        - fieldExtractor:
+            jsonPath: ".status.ingress"
+          name: ingress
+      relations:
+      - targetKind:
+          jsonPath: ".spec.to.kind"
+        targetApiVersion:
+          jsonPath: "const:v1"
+        targetResourceName:
+          jsonPath: ".spec.to.name"
+        targetResourceNamespace:
+          jsonPath: ".metadata.namespace"
+        relationType: "Provided By::Provides"
+        relationDirection: true
+    
+    gateway.networking.k8s.io/v1/gateways:
+      fields:
+        - fieldExtractor:
+            jsonPath: ".spec"
+          name: spec
+        - fieldExtractor:
+            jsonPath: ".status.addresses"
+          name: addresses
+    gateway.networking.k8s.io/v1/httproutes:
+      fields:
+        - fieldExtractor:
+            jsonPath: ".spec.hostnames"
+          name: hostnames
+        - fieldExtractor:
+            jsonPath: ".spec.rules"
+          name: rules
+        - fieldExtractor:
+            jsonPath: ".status.parents[:].parentRef"
+          name: parents
+      relations:
+      - targetKind:
+          jsonPath: ".status.parents[:].parentRef.kind"
+        targetApiVersion:
+          jsonPath: "const:gateway.networking.k8s.io/v1"
+        targetResourceName:
+          jsonPath: ".status.parents[:].parentRef.name"
+        targetResourceNamespace:
+          jsonPath: ".metadata.namespace"
+        relationType: Used by::Uses
+        relationDirection: true
+  server_attributes: |
+    virtual:
+      shellCi: false
+      sources:
+        - name: gke
+          condition:
+            jsonPath: .spec.providerID
+            regExp: 'gce://.*'
+          fieldExtractor:
+            jsonPath: 'const:true'
+        - name: eks
+          condition:
+            jsonPath: .spec.providerID
+            regExp: 'aws://.*'
+          fieldExtractor:
+            jsonPath: 'const:true'
+        - name: azure
+          condition:
+            jsonPath: .spec.providerID
+            regExp: 'azure://.*'
+          fieldExtractor:
+            jsonPath: 'const:true'
+    object_id:
+      shellCi: true
+      sources:
+        - name: gke
+          condition:
+            jsonPath: .spec.providerID
+            regExp: 'gce://.*'
+          fieldExtractor:
+            jsonPath: .metadata.annotations.container\.googleapis\.com/instance_id
+        - name: eks
+          condition:
+            jsonPath: .spec.providerID
+            regExp: 'aws://.*'
+          fieldExtractor:
+            jsonPath: .spec.providerID
+            regExp: '.*\/([^\/]+)$'
+        - name: azure
+          condition:
+            jsonPath: .spec.providerID
+            regExp: 'azure://.*'
+          fieldExtractor:
+            jsonPath: .spec.providerID
+            regExp: 'azure://(.*)'
+
+# Comma separated list of labels and annotation the system should bring to the CMDB. Empty list means all
+includeLabelsAndAnnotations:
+
+# Comma separated list of labels and annotations we should not bring to the CMDB
+excludeLabelsAndAnnotations:
+
+# Should the system populate the cluster_version field in cmdb_ci_kubernetes_cluster CI
+getClusterVersion: true
+
+# Labels common to all resources
+commonLabels:
+
+# Annotations common to all resources
+commonAnnotations:
+
+# Informer version - Shown in the Informer table as Informer Version
+informerVersion: 2.8.3
+
+# The maximum size in bytes of the result of the API call to K8sInformerGetResourceApi. Results larger than those will be ignored
+getResourceMaxBytes: 5242880
+
+# The maximum number of requests in one get_resource command
+maxGetResourceRequests: 10
+
+# Retry count for Http rest API Post call (on get_resource request)
+httpRestApiPostRetryCount: 2
+
+# Will the system allow self patching of the informer
+selfPatchingAllowed: true
+
+# Labels of the designated node on which the informer should run
+nodeSelector:
+  kubernetes.io/os: linux
+
+# Pick the servicenow credentials from Azure vault. those values should be set if secretProvider is set to azure.
+# For information on how to set up the vault and the access go to https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver
+azureVault:
+  # The vault name
+  vaultName:
+  # the tenant ID
+  tenantId:
+  # the client ID of the identity used to access the vault
+  userAssignedIdentityId:
+  # leave empty in case of AzurePublicCloud
+  cloudName:
+  # options are policy or rbac
+  vaultType: rbac
+
+# The expected delay in sending ECC messages above which we start push new resources to the top of the queue
+minEstimatedEccDelaySeconds: 300
+
+# configuration for handling short-lived resources
+suppressChanges:
+  # We consider a resource to be short-lived if the expected life span is below this number in minutes
+  resource_life_span_minutes: 15
+  # When a resource is short-lived we will report on one of N changes, where N is this number
+  suppressRatio: 10
+
+# Pick the credentials from Google Secret manager. those value should be set if secretProvider is set to google
+# For information on how to set up GKE and the secret manager go to https://cloud.google.com/secret-manager/docs/secret-manager-managed-csi-component#secretmanager-addon-enable-console
+googleSecrets:
+  # the secret driver used in GKE
+  gkeSecretProvider: secrets-store-gke.csi.k8s.io
+  # The project ID (example: my-project-123456)
+  projectId:
+
+  # The name of the secret holding the instance username in Google Secret manager
+  userSecret:
+  # The version of the secret holding the instance username in Google Secret manager
+  userSecretVersion: "1"
+  # The name of the secret holding the instance password in Google Secret manager
+  passwordSecret:
+  # The version of the secret holding the instance password in Google Secret manager
+  passwordSecretVersion: "1"
+
+  # Setting for OAuth2.0
+
+  # In case of OAuth2.0 this is the same of the clientID in the Google Secret Manager
+  oauthClientIdSecret:
+  # The version of the client ID secret in the Google secret manager
+  oauthClientIdVersion: "1"
+  # The name of the clientSecret secret in the Google secret manager
+  oauthClientSecret:
+  # The version of the clientSecret secret in the Google secret manager
+  oauthClientSecretVersion: "1"
+
+  # Settings for proxy authentication
+
+  # The name of the proxy user secret in the Google secret manager
+  proxyUserSecret:
+  # The version of the proxy user secret in the Google secret manager
+  proxyUserSecretVersion: "1"
+  # The name of the proxy password secret in the Google secret manager
+  proxyPasswordSecret:
+  # The version of the proxy password secret in the Google secret manager
+  proxyPasswordSecretVersion: "1"
+
+  # Settings for Prometheus basic authentication
+  prometheusUserSecret:
+  prometheusUserSecretVersion: "1"
+  prometheusPasswordSecret:
+  prometheusPasswordSecretVersion: "1"
+
+  # Settings for connections discovery using daemonset
+  serverKeySecret:
+  serverCertificateSecret:
+  clientKeySecret:
+  clientCertificateSecret:
+  customCaCertificateSecret:
+
+# Custom root certificate authority. This should be populated by the content of a certificate
+customRootCA:
+  use: false
+  certificate:
+
+#distinguish between default security option & custom security option
+customSecurityContextEnabled: false
+
+#  Pod security context.This is relevant to main informer.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Where should the system pick the information on images. Options are:
+#  image (meaning containerStatuses.image)
+#  imageID (meaning containerStatuses.imageID)
+#  both (meaning both containerStatuses.image and containerStatuses.imageID)
+imageInfoSource: image
+
+# Connections discovery
+connectionsDiscovery:
+  # The supported methods are linkerd and istio
+  method:
+
+  # The following values can override the default values of linkerd and istio
+
+  # The URL of Prometheus
+  prometheusUrl:
+  # The Prometheus query that brings aggregated data on connections. If it is a single query, provide it as plain text,
+  # otherwise provide JSON array of strings
+  prometheusQuery:
+  # Mapping between the normalized fields required by the informer and the labels returned by the Prometheus query. If
+  # it is a single mapping, provide a JSON map, otherwise provide a JSON array of maps
+  prometheusQueryMappings:
+
+  # Default settings for linkerd
+  linkerdDefaultPrometheusUrl: "http://prometheus.linkerd-viz:9090"
+  linkerdPrometheusQuery: avg by (instance, pod,namespace, target_ip, dst_namespace, dst_service) ( irate(request_total{ direction='outbound' , namespace != 'linkerd-viz'}[2m] ))
+  linkerdPrometheusQueryMappings: |
+      { "target_ip": "target_ip", "source_namespace": "namespace", "target_service_namespace": "dst_namespace", "target_workload_namespace": "dst_namespace", "target_service": "dst_service", "target_pod": "dst_pod", "instance": "instance"}
+
+  # Default settings for istio
+  istioDefaultPrometheusUrl: "http://prometheus.istio-system:9090"
+  istioPrometheusQuery: |
+    [ 
+    "avg by (source_workload, source_workload_namespace, destination_service_name, destination_service_namespace, destination_workload, destination_workload_namespace, source_cluster, destination_cluster , instance ) (irate(istio_requests_total { reporter='source' }  [2m]))",
+    "avg by (source_workload, source_workload_namespace, destination_service_name, destination_service_namespace, destination_workload, destination_workload_namespace, source_cluster, destination_cluster , instance ) (irate(istio_tcp_sent_bytes_total { reporter='source' }  [2m]))"
+    ]
+  istioPrometheusQueryMappings: |
+    { "source_namespace": "source_workload_namespace", "target_workload_namespace": "destination_workload_namespace", "target_service_namespace":"destination_service_namespace", "target_service": "destination_service_name", "source_pod": "pod", "instance": "instance"}
+
+  # Discard query results from Prometheus with zero values
+  prometheusDiscardZeroValues: true
+
+  # Prometheus query interval in seconds
+  prometheusQueryIntervalSec: 30
+
+  # Maximum number of connections in single message to the instance
+  maxConnectionsInPayload: 100
+
+  # Should we use basic authentication when connecting to Prometheus
+  prometheusBasicAuth: false
+
+  # Interval for sending new connections during continuous discovery
+  continuousDiscoveryIntervalSec: 30
+
+  # When using ServiceNow's daemonset, do we allow packet capture
+  packetCaptureEnabled: true
+
+  # Service account used by the Daemonset, if such is deployed
+  daemonsetServiceAccount: servicenow-ds-account
+
+  # The informer daemonset security context
+  daemonsetContainerSecurityContext:
+
+  # Should create an Openshift SecurityContextConstraint
+  installOpenshiftSecurityContextConstraint: false
+
+  # Kubernetes Pods Subnet CIDR (for detection of external connections)
+  podsSubnetCidr: 8
+
+  # Array of namespaces from/to which connections are ignored
+  excludedNamespaces:
+    - kube-system
+    - linkerd
+    - linkerd-viz
+    - istio-system
+    - openshift-kube-apiserver-operator
+    - openshift-cnv
+    - openshift-kube-storage-version-migrator
+    - openshift-console
+    - openshift-monitoring
+    - openshift-image-registry
+    - openshift-marketplace
+  # Array of excluded target hostnames. Can be a partial hostname. If multiple hostnames are provided separate them by \,. for example: host1\,host2\,host3
+  excludedHostnames:
+
+  # Array of excluded target subnets. Format of each element is IP/Mask bits. Example: 128.4.43.0/24. Relevant to external connections only.
+  # if multiple subnets are provided separate them by \,. For example: 38.0.101.76/24\,237.84.2.178/24
+  excludedSubnets:
+
+  # Max number of connections held by the daemonset pod
+  daemonsetMaxConnections: 10000
+
+  # Interval in seconds between calls of the daemonset to the main informer
+  daemonsetPollingIntervalSeconds: 60
+
+  # Max number of connections sent in single payload to the main informer
+  daemonsetMaxConnectionsInPayload: 1000
+
+  # Aging time in minutes of connections held by the daemonset
+  daemonsetConnectionAgingTimeMinutes: 1440
+
+  # The informer's http server port
+  httpServerPort: 8080
+
+  # Interval in seconds for scanning the host proc filesystem
+  daemonsetScanProcFilesystemIntervalSeconds: 30
+
+  # TLS configuration is relevant when a daemonset is being used
+  tls:
+    # Options are: None - No TLS is used
+    #              VerifyServerCertificate - the daemonset verifies the https server certificate
+    #              VerifyClientCertificate - the informer verifies the certificate of the daemonset
+    #              mTLS - mutual authentication is used
+    #              NoCertificateVerification - TLS is used for encryption, but certificates are not verified
+    mode: None
+    # True if custom CA used to sign the client and server certificates. We assume the same CA signed both
+    customCa: true
+
+  # Daemonset resources
+  daemonset:
+    resources:
+      cpu:
+        request: 100m
+        limit: 500m
+      memory:
+        request: 50Mi
+        limit: 100Mi
+  # Cilium/Hubble settings (relevant when method is "cilium")
+  cilium:
+    # Path to the Hubble Unix domain socket on the host node
+    hubbleSocketPath: /var/run/cilium/hubble.sock
+
+  # Optional tolerations for the daemonset pod
+  tolerations:
+
+# Should the system create container CIs (cmdb_ci_docker_container). Options are:
+# all - create regular and init containers
+# non_init_containers - create containers which are not init containers
+# none - do not create any container CIs
+createContainers: non_init_containers
+
+# Readiness and liveness probes. By default the probes are disabled
+healthProbes:
   enabled: false
-  className: ""
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
-  hosts:
-    - host: chart-example.local
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
+  port: 8081
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
 
-resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+# Discover external IPs of Kubernetes services
+discoverK8sServiceExternalIps: false
 
-# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
-livenessProbe:
-  httpGet:
-    path: /
-    port: http
-readinessProbe:
-  httpGet:
-    path: /
-    port: http
+# Kubernetes client configuration
+kubernetesClient:
+  dialerTimeoutSec: 30
+  keepAliveSec: 30
+  timeoutSec: 0
 
-#This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
-autoscaling:
+# The minimum TLS version used when the informer connects to the ServiceNow instance
+# The default (when no value is provided is TLS12
+# Optional values: TLS10, TLS11, TLS12, TLS13
+minTLSVersion:
+
+# time in minutes allowed for initial synchronization with the K8s API server when bringing additional resources
+resourceSyncTimeoutMinutes: 10
+
+# Kubevirt configuration
+kubevirt:
   enabled: false
-  minReplicas: 1
-  maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
+  resources: |
+    - apiGroups:
+        - kubevirt.io
+      apiVersions:
+        - v1
+      resources:
+        - virtualmachines
+        - virtualmachineinstances
+      verbs:
+        - get
+        - list
+        - watch
+    - apiGroups:
+        - cdi.kubevirt.io
+      apiVersions:
+        - v1beta1
+      resources:
+        - datavolumes
+      verbs:
+        - get
+        - list
+        - watch
+  mappings: |
+    kubevirt.io/v1/virtualmachines:
+      fields:
+        - name: running
+          fieldExtractor:
+            jsonPath: ".status.printableStatus"
+        - name: guest_os
+          fieldExtractor:
+            jsonPath: ".spec.template.metadata.annotations.vm\\.kubevirt\\.io/os"
+        - name: cpus
+          fieldExtractor:
+            jsonPath: ".spec.template.spec.domain.cpu"
+        - name: memory
+          fieldExtractor:
+            jsonPath: ".spec.template.spec.domain.memory.guest"
+        - name: disks
+          fieldExtractor:
+            jsonPath: ".spec.template.spec.domain.devices.disks"
+        - name: nics
+          fieldExtractor:
+            jsonPath: ".spec.template.spec.domain.devices.interfaces"
+      relatedEntries:
+        - targetTable: cmdb_kubevirt_virtual_machine
+          referenceField: configuration_item
+          arrayJsonPath: ""
+          fields:
+          - name: running
+            targetColumn: running
+            fieldExtractor:
+              jsonPath: ".status.printableStatus"
+          - name: k8s_uid
+            targetColumn: k8s_uid
+            fieldExtractor:
+              jsonPath: ".metadata.uid"
+    kubevirt.io/v1/virtualmachineinstances:
+      relatedEntries:
+        - targetTable: cmdb_kubevirt_virtual_machine_instance
+          referenceField: configuration_item
+          arrayJsonPath: ""
+          fields:
+          - name: k8s_uid
+            targetColumn: k8s_uid
+            fieldExtractor:
+              jsonPath: ".metadata.uid"
+          - name: node_name
+            targetColumn: node_name
+            fieldExtractor:
+              jsonPath: ".metadata.labels.kubevirt\\.io/nodeName"
+      relations:
+        - targetResourceUid:
+            jsonPath: ".metadata.ownerReferences[:].uid"
+          targetKind:
+            jsonPath: ".metadata.ownerReferences[:].kind"
+          targetApiVersion:
+            jsonPath: ".metadata.ownerReferences[:].apiVersion"
+          relationType: Owns::Owned by
+          relationDirection: false
+      fields:
+        - name: phase
+          fieldExtractor:
+            jsonPath: ".status.phase"
+        - name: interfaces
+          fieldExtractor:
+            jsonPath: ".status.interfaces"
+        - name: nodeName
+          fieldExtractor:
+            jsonPath: ".status.nodeName"
+        - name: volumeStatus
+          fieldExtractor:
+            jsonPath: ".status.volumeStatus"
+        - name: guestOSInfo
+          fieldExtractor:
+            jsonPath: ".status.guestOSInfo"
+        - name: ownerReferences
+          fieldExtractor:
+            jsonPath: ".metadata.ownerReferences"
+        - name: specDomain
+          fieldExtractor:
+            jsonPath: ".spec.domain"
+    cdi.kubevirt.io/v1beta1/datavolumes:
+      relatedEntries:
+        - targetTable: cmdb_kubevirt_data_volume
+          referenceField: configuration_item
+          arrayJsonPath: ""
+          fields:
+          - name: requested_storage
+            targetColumn: requested_storage
+            fieldExtractor:
+              jsonPath: ".spec.storage.resources.requests.storage"
+          - name: k8s_uid
+            targetColumn: k8s_uid
+            fieldExtractor:
+              jsonPath: ".metadata.uid"
+      relations:
+        - targetResourceUid:
+            jsonPath: ".metadata.ownerReferences[:].uid"
+          targetKind:
+            jsonPath: ".metadata.ownerReferences[:].kind"
+          targetApiVersion:
+            jsonPath: ".metadata.ownerReferences[:].apiVersion"
+          relationType: Owns::Owned by
+          relationDirection: false
+  
+# comma separated list of resources which should be paginated. for example: v1/configmaps
+# Applicable to non out-of-box resources only and to namespaced resources only
+paginatedInformers:
 
-# Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+# The number of resources to fetch in a single paginated request
+paginatedInformersPageSize: 500
 
-# Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+# Retries for paginated informers
+paginatedInformersMaxRetries: 5
 
-nodeSelector: {}
+# pagination method to use. Options are: resource_count, namespace, resource_count_and_namespace
+paginatedInformersPaginationMethod: resource_count_and_namespace
 
-tolerations: []
+# Should the system list all replicasets by calling the Kubernetes API server. If false, the system will
+# create replicasets using information coming from the child pods and the parent deployment only
+listReplicasets: false
 
-affinity: {}
+# Should the system ignore replicasets with zero desired replicas during full discovery.
+# This is relevant only if listReplicasets is true
+ignoreStaleReplicasets: true
+
+# Should the system bring empty labels and annotations to the CMDB
+bringEmptyLabelsAndAnnotations: false
+
+# Service operating system normalization map. The format is: <string contained in original OS name>:<normalized OS name>
+serverOsNormalizationMap: oracle linux:Linux Oracle,red hat:Linux Red Hat,redhat:Linux Red Hat,fedora:Linux Fedora,suse:Linux SuSE,centos:Linux CentOS,ubuntu:Linux Ubuntu
+
+# Should the system report the OS version
+reportServerOsVersion: true
+
+# Should the system bring node externalIPs to the CMDB as cmdb_ci_ip_address
+bringNodeExternalIPs: false
+
+# Should bring the ingress addresses
+bringIngressAddresses: false
+
+# IBM licensing parametera
+ibmLicensing:
+  # Should the informer connect to the IBM License service and collect usage report
+  enabled: false
+  # if the default ClusterRole ibm-licensing-default-reader does not exist, this installation will create a new one
+  createClusterRole: false
+  # if we create a ClusterRole, this is the name prefix we will use
+  clusterRole: ibm-licensing-servicenow-reader
+  # the namespace where the ibm-licensing service is installed
+  namespace: ibm-licensing
+  # Override the default URL of the license service in the cluster
+  ibmLicenseServiceUrl: ""
+  # Number of records sent in a single message to the instance
+  payloadChunkSize: 500
+  # The max number of days reported in the daily report to the instance. The actual number is based on the last reported day, so if we report every day, we will usually report on the previous day and the current day.
+  timeWindowDays: 90
+  # Should the informer use the CA certificate of the IBM license service to connect to the IBM License service.
+  # If false, the informer will skip the verification of the certificate. It is highly recommended to use the CA certificate.
+  useCaCertificate: false
+  # The CA certificate of the IBM license service. The certificate should in a raw PEM format (text file starting with BEGIN_CERTIFICATE and ending with END_CERTIFICATE)
+  caCertificate: ""

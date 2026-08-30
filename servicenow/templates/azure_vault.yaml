@@ -1,0 +1,84 @@
+{{ if eq .Values.secretProvider "azure" }}
+{{ if or (eq .Values.azureVault.vaultType "rbac") (eq .Values.azureVault.vaultType "policy") }}
+{{ if .Values.azureVault.vaultName }}
+{{ if .Values.azureVault.tenantId }}
+{{ if .Values.azureVault.userAssignedIdentityId }}
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: k8s-informer-{{ .Values.secretProvider }}-{{ .Values.instance.name }}
+  annotations:
+    helm.sh/hook: pre-install
+spec:
+  provider: azure
+  parameters:
+    {{ if eq .Values.azureVault.vaultType "rbac"}}
+    clientID: {{ .Values.azureVault.userAssignedIdentityId }}
+    {{ else }}
+    useVMManagedIdentity: "true"
+    userAssignedIdentityID: {{ .Values.azureVault.userAssignedIdentityId }}
+    {{ end }}
+    cloudName: "{{ .Values.azureVault.cloudName }}"
+    usePodIdentity: "false"
+    keyvaultName: {{ .Values.azureVault.vaultName }}
+    objects:  |
+      array:
+        - |
+          objectName: user
+          objectType: secret
+        - |
+          objectName: password
+          objectType: secret
+        {{ if .Values.connectionsDiscovery.prometheusBasicAuth }}
+        - |
+          objectName: prometheus_user
+          objectType: secret
+        - |
+          objectName: prometheus_password
+          objectType: secret
+        {{ end }}
+        {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow")}}
+        {{ if not (eq .Values.connectionsDiscovery.tls.mode "None") }}
+        - |
+          objectName: server-key
+          objectType: secret
+          objectAlias: server_key
+        - |
+          objectName: server-cert
+          objectType: secret
+          objectAlias: server_cert
+        {{ if or (eq .Values.connectionsDiscovery.tls.mode "mTLS") (eq .Values.connectionsDiscovery.tls.mode "VerifyClientCertificate") }}
+        - |
+          objectName: client-key
+          objectType: secret
+          objectAlias: client_key
+        - |
+          objectName: client-cert
+          objectType: secret
+          objectAlias: client_cert
+        {{ end }}
+        {{ if eq .Values.connectionsDiscovery.tls.customCa true }}
+        {{ if or (eq .Values.connectionsDiscovery.tls.mode "mTLS") (eq .Values.connectionsDiscovery.tls.mode "VerifyServerCertifcate") (eq .Values.connectionsDiscovery.tls.mode "VerifyClientCertificate")}}
+        - |
+          objectName: ca-cert
+          objectType: secret
+          objectAlias: ca_cert
+
+        {{ end }}
+        {{ end }}
+        {{ end }}
+        {{ end }}
+    tenantId: {{ .Values.azureVault.tenantId }}
+{{ else }}
+  {{fail "\n\nError: Please provide Azure user assigned identity by --set azureVault.userAssignedIdentityId=<USER_ASSIGNED_IDENTITY_ID>\n\n"}}
+{{ end }}
+{{ else }}
+  {{fail "\n\nError: Please provide Azure tenant ID by --set azureVault.tenantId=<TENANT_ID>\n\n"}}
+{{ end }}
+{{ else }}
+  {{fail "\n\nError: Please provide Azure vault name by --set azureVault.vaultName=<VAULT_NAME>\n\n"}}
+{{ end }}
+{{ else }}
+  {{fail "\n\nError: Please provide a valid vault type (rbac or policy) using --set azureVault.vaultType=<VAULT_TYPE>\n\n"}}
+{{ end }}
+{{ end }}

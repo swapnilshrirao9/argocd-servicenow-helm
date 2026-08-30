@@ -1,68 +1,435 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "servicenow.fullname" . }}
+  name: k8s-informer-{{ required "Use --set instance.name=INSTANCE_NAME to provide the instance name" .Values.instance.name }}
   labels:
-    {{- include "servicenow.labels" . | nindent 4 }}
+    app: k8s_informer-{{ .Values.instance.name }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
-  {{- end }}
   selector:
     matchLabels:
-      {{- include "servicenow.selectorLabels" . | nindent 6 }}
+      app: k8s-informer-{{ .Values.instance.name }}
+  replicas: 1
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
-      annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       labels:
-        {{- include "servicenow.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
+        app: k8s-informer-{{ .Values.instance.name }}
+        {{- with .Values.commonLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{ if and (eq .Values.secretProvider "azure") (eq .Values.azureVault.vaultType "rbac") }}
+        azure.workload.identity/use: "true"
+        {{ end }}
+      annotations:
+        {{- with .Values.commonAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      serviceAccountName: {{ include "servicenow.serviceAccountName" . }}
-      securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      containers:
-        - name: {{ .Chart.Name }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.service.port }}
-              protocol: TCP
-          livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
-          readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-          {{- with .Values.volumeMounts }}
-          volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.volumes }}
-      volumes:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.nodeSelector }}
       nodeSelector:
+        {{- with .Values.nodeSelector }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
+      automountServiceAccountToken: true
+      volumes:
+        - name: additional-resources
+          configMap:
+            name: k8s-informer-additional-resources-{{ .Values.instance.name }}
+            items:
+              - key: "resources"
+                path: "resources.json"
+              - key: "mappings"
+                path: "mappings.json"
+              - key: "mappings_oob"
+                path: "mappings_oob.json"
+              - key: "server_attributes"
+                path: "server_attributes.json"
+        - name: credentials
+        {{ if .Values.secretProvider }}
+          csi:
+            {{ if eq .Values.secretProvider "google"}}
+            driver: {{ .Values.googleSecrets.gkeSecretProvider }}
+            {{ else }}
+            driver: secrets-store.csi.k8s.io
+            {{ end }}
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: k8s-informer-{{ .Values.secretProvider }}-{{ .Values.instance.name }}
+        {{ else }}
+          secret:
+            secretName: {{ .Values.instanceCredSecretName }}-{{ .Values.instance.name }}
+        {{ end }}
+        {{ if .Values.customRootCA }}
+        {{ if eq .Values.customRootCA.use  true }}
+        - name: custom-root-ca
+          configMap:
+            name: k8s-informer-custom-root-ca-{{ .Values.instance.name }}
+            items:
+              - key: "custom_root_ca"
+                path: "root_ca.crt"
+        {{ end }}
+        {{ end }}
+        {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") (not (eq .Values.connectionsDiscovery.tls.mode "None")) }}
+        - name: tls
+        {{ if .Values.secretProvider }}
+          csi:
+          {{ if eq .Values.secretProvider "google"}}
+            driver: {{ .Values.googleSecrets.gkeSecretProvider }}
+          {{ else }}
+            driver: secrets-store.csi.k8s.io
+          {{ end }}
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: k8s-informer-{{ .Values.secretProvider }}-{{ .Values.instance.name }}
+          {{ else }}
+          secret:
+            secretName: k8s-informer-tls-{{ .Values.instance.name }}
+        {{ end }}
+        {{ end }}
+        {{ if .Values.ibmLicensing.useCaCertificate }}
+        - name: ibm-license-ca-cert
+          secret:
+            secretName: ibm-license-ca-cert
+        {{ end }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
+      serviceAccountName: {{ .Values.serviceAccount }}-{{ .Values.instance.name }}
+      securityContext:
+        {{ if eq .Values.customSecurityContextEnabled false }}
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{ else }}
+        {{.Values.podSecurityContext | nindent 8 }}
+        {{ end }}
+      {{ if .Values.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      {{ end }}
+      containers:
+        - command:
+            - /k8s_informer
+          args: ["--kubeconfig", "in_cluster", "--standalone", "true"]
+        {{ if .Values.useDebugImage }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}_debug"
+        {{ else }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        {{ end }}
+        {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow")}}
+          ports:
+          - containerPort: 8080
+        {{ end }}
+          name: k8sinformer
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+              add:
+              {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow")}}
+                - NET_BIND_SERVICE
+              {{ end }}
+          volumeMounts:
+            - name: credentials
+              readOnly: true
+              mountPath: "/etc/credentials"
+            - name: additional-resources
+              readOnly: true
+              mountPath: "/etc/additionalResources"
+            {{ if .Values.customRootCA }}
+            {{ if eq .Values.customRootCA.use true }}
+            - name: custom-root-ca
+              readOnly: true
+              mountPath: "/etc/custom_root_ca"
+            {{ end }}
+            {{ end }}
+            {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") (not (eq .Values.connectionsDiscovery.tls.mode "None")) }}
+            - name: tls
+              readOnly: true
+              mountPath: "/etc/tls"
+            {{ end }}
+            {{ if .Values.ibmLicensing.useCaCertificate }}
+            - name: ibm-license-ca-cert
+              readOnly: true
+              mountPath: "/etc/ibm-licensing"
+            {{ end }}
+          env:
+        {{ if eq .Values.acceptEula "Y" }}
+            - name: ACCEPT_EULA
+              value: "{{ .Values.acceptEula }}"
+        {{ else }}
+        {{fail "\n\nError: Please accept EULA by setting acceptEula value to Y.\nYou can find EULA.pdf in tgz file downloaded from ServiceNow\n\n"}}
+        {{ end }}
+            - name: CLUSTER_NAME
+        {{ $clusterName := trimAll " " .Values.clusterName }}
+              value: {{ required "Missing or empty clusterName value. Use --set clusterName=CLUSTER_NAME or --set clusterName=\"$(kubectl config current-context)\"" $clusterName }}
+            - name: RESYNC_MIN
+              value: "{{ .Values.resyncMin }}"
+            - name: SEND_INTERVAL_SEC
+              value: "{{ .Values.sendIntervalSec }}"
+            - name: MAX_CI_IN_MESSAGE
+              value: "{{ .Values.maxCiInMessage }}"
+            - name: REFRESH_TIME_MIN
+              value: "{{ .Values.refreshTimeMin }}"
+            - name: FULL_DISCOVERY_MIN
+              value: "{{ .Values.fullDiscoveryMin }}"
+            - name: READ_COMMAND_SEC
+              value: "{{ .Values.readCommandSec }}"
+            - name: HEARTBEAT_MIN
+              value: "{{ .Values.heartbeatMin }}"
+            - name: MAX_QUEUE_SIZE_BYTES
+              value: "{{ int64 .Values.maxQueueSizeBytes }}"
+            - name: MAX_RETRY
+              value: "{{ .Values.maxRetry }}"
+            - name: MAX_ECC_PAYLOAD_SIZE_BYTES
+              value: "{{ int64 .Values.maxEccPayloadSizeBytes }}"
+            - name: PROXY_URL
+              value: "{{ .Values.proxyUrl }}"
+            - name: INSTANCE
+              value: {{ .Values.instance.name }}
+            - name: INSTANCE_URL
+              value: "https://{{ .Values.instance.name }}.{{ .Values.instance.domain }}"
+            - name: ENV_INSTANCE_NAME
+              value: "{{ .Values.instance.name }}"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CONTINUOUS_DISCOVERY
+              value: "{{ .Values.continuousDiscovery }}"
+            - name: ECC_SENDER_INTERVAL_SEC
+              value: "{{ .Values.eccSenderIntervalSec }}"
+            - name: MAX_ELAPSED_TIME_MS
+              value: "{{ .Values.maxElapsedTimeMs }}"
+            - name: VERBOSE_LOGGING
+              value: "{{ .Values.verboseLogging }}"
+            - name: INFORMER_REPOSITORY
+              value: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+            - name: SKIP_TLS_CERT_VALIDATION
+              value: "{{ .Values.skipTLSCertificateValidation }}"
+            - name: SUPPRESS_FREQUENT_CHANGES
+              value: "{{ .Values.suppressFrequentChanges }}"
+            - name: SUPPRESS_CHANGES_RATE_PER_MIN
+              value: "{{ .Values.suppressChangesRatePerMin }}"
+            - name: MIN_CHANGES_SUPPRESS_FREQUENT_CHANGES
+              value: "{{ .Values.minChangesSuppressFrequentChanges }}"
+            - name: OPENSHIFT
+              value: "{{ .Values.openShift }}"
+            - name: ADD_NODE_LABELS
+              value: "{{ .Values.addNodeLabels }}"
+            - name: CREATE_SERVER_CI
+              value: "{{ .Values.createServerCi }}"
+            - name: CLUSTER_RESOURCE_ID
+              value: "{{ .Values.clusterResourceId }}"
+            - name: INCLUDE_LABELS_AND_ANNOTATIONS
+              value: "{{ .Values.includeLabelsAndAnnotations }}"
+            - name: EXCLUDE_LABELS_AND_ANNOTATIONS
+              value: "{{ .Values.excludeLabelsAndAnnotations }}"
+            - name: GET_CLUSTER_VERSION
+              value: "{{ .Values.getClusterVersion }}"
+            - name: GET_RESOURCE_MAX_BYTES
+              value: "{{ int64 .Values.getResourceMaxBytes }}"
+            - name: MAX_GET_RESOURCE_REQUESTS
+              value: "{{ .Values.maxGetResourceRequests }}"
+            - name: HTTP_REST_API_POST_RETRY_COUNT
+              value: "{{ .Values.httpRestApiPostRetryCount }}"
+            - name: SELF_PATCHING_ALLOWED
+              value: "{{ .Values.selfPatchingAllowed }}"
+            - name: SECRET_PROVIDER
+              value: {{ .Values.secretProvider }}
+            - name: MIN_ESTIMATED_ECC_DELAY_SECONDS
+              value: "{{ .Values.minEstimatedEccDelaySeconds }}"
+            - name: SHORT_LIVED_MIN_LIFESPAN_MINUTES
+              value: "{{ .Values.suppressChanges.resource_life_span_minutes }}"
+            - name: SHORT_LIVED_SUPPRESS_RATIO
+              value: "{{ .Values.suppressChanges.suppressRatio }}"
+            {{ if .Values.customRootCA }}
+            - name: USE_CUSTOM_ROOT_CA
+              value: "{{ .Values.customRootCA.use }}"
+            {{ end }}
+            - name: OAUTH_TOKEN_URL
+              value: "{{ .Values.oauth.tokenUrl }}"
+            - name: OAUTH_SCOPES
+              value: "{{ .Values.oauth.scopes }}"
+            - name: OAUTH_STYLE
+              value: "{{ .Values.oauth.style }}"
+            {{ if .Values.connectionsDiscovery }}
+            - name: MAX_CONNECTIONS_IN_PAYLOAD
+              value: "{{ .Values.connectionsDiscovery.maxConnectionsInPayload }}"
+            - name: CONTINUOUS_CONNECTIONS_DISCO_INTERVAL_SEC
+              value: "{{ .Values.connectionsDiscovery.continuousDiscoveryIntervalSec }}"
+            - name: PROMETHEUS_QUERY_INTERVAL_SEC
+              value: "{{ .Values.connectionsDiscovery.prometheusQueryIntervalSec }}"
+            - name: PROMETHEUS_DISCARD_ZERO_VALUES
+              value: "{{ .Values.connectionsDiscovery.prometheusDiscardZeroValues }}"
+            - name: GET_CONNECTIONS_METHOD
+              value: "{{ .Values.connectionsDiscovery.method }}"
+            - name: PROMETHEUS_BASIC_AUTH
+              value: "{{ .Values.connectionsDiscovery.prometheusBasicAuth }}"
+            - name: PROMETHEUS_URL
+              {{ if .Values.connectionsDiscovery.prometheusUrl }}
+              value: "{{ .Values.connectionsDiscovery.prometheusUrl }}"
+              {{ else }}
+              {{ if eq .Values.connectionsDiscovery.method "linkerd" }}
+              value: "{{ .Values.connectionsDiscovery.linkerdDefaultPrometheusUrl }}"
+              {{ end }}
+              {{ if eq .Values.connectionsDiscovery.method "istio" }}
+              value: "{{ .Values.connectionsDiscovery.istioDefaultPrometheusUrl }}"
+              {{ end }}
+              {{ end }}
+            - name: PROMETHEUS_QUERY
+              {{ if .Values.connectionsDiscovery.prometheusQuery }}
+              value: {{ .Values.connectionsDiscovery.prometheusQuery | quote }}
+              {{ else }}
+              {{ if eq .Values.connectionsDiscovery.method "linkerd" }}
+              value: {{ .Values.connectionsDiscovery.linkerdPrometheusQuery | quote }}
+              {{ end }}
+              {{ if eq .Values.connectionsDiscovery.method "istio" }}
+              value: {{ .Values.connectionsDiscovery.istioPrometheusQuery | quote }}
+              {{ end }}
+              {{ end }}
+            - name: PROMETHEUS_QUERY_MAPPINGS
+              {{ if .Values.connectionsDiscovery.prometheusQueryMappings }}
+              value: {{ .Values.connectionsDiscovery.prometheusQueryMappings | quote }}
+              {{ else }}
+              {{ if eq .Values.connectionsDiscovery.method "linkerd" }}
+              value: {{ .Values.connectionsDiscovery.linkerdPrometheusQueryMappings | quote }}
+              {{ end }}
+              {{ if eq .Values.connectionsDiscovery.method "istio" }}
+              value: {{ .Values.connectionsDiscovery.istioPrometheusQueryMappings | quote }}
+              {{ end }}
+              {{ end }}
+            - name: PODS_SUBNET_CIDR
+              value: "{{ .Values.connectionsDiscovery.podsSubnetCidr }}"
+              {{ if .Values.connectionsDiscovery.excludedNamespaces }}
+            - name: CONNECTIONS_EXCLUDE_NAMESPACES
+              value: "{{ join "," .Values.connectionsDiscovery.excludedNamespaces }}"
+              {{ end }}
+              {{ if .Values.connectionsDiscovery.excludedHostnames }}
+            - name: CONNECTIONS_EXCLUDE_HOSTNAMES
+              value: "{{ join "," .Values.connectionsDiscovery.excludedHostnames}}"
+              {{ end }}
+              {{ if .Values.connectionsDiscovery.excludedSubnets }}
+            - name: CONNECTIONS_EXCLUDE_SUBNETS
+              value: "{{ join "," .Values.connectionsDiscovery.excludedSubnets}}"
+              {{ end }}
+            {{ end }}
+            {{ if eq .Values.connectionsDiscovery.method "servicenow" }}
+            - name: CONNECTIONS_HTTP_SERVER_PORT
+              value: "{{ .Values.connectionsDiscovery.httpServerPort }}"
+            - name: CONNECTIONS_TLS_MODE
+              value: "{{ .Values.connectionsDiscovery.tls.mode }}"
+            - name: CONNECTIONS_CUSTOM_CA
+              value: "{{ .Values.connectionsDiscovery.tls.customCa }}"
+            {{ end }}
+            - name: CREATE_CONTAINERS
+              value: "{{ .Values.createContainers }}"
+            - name: IMAGE_INFO_SOURCE
+              value: "{{ .Values.imageInfoSource }}"
+            - name: IGNORE_STALE_REPLICASETS
+              value: "{{ .Values.ignoreStaleReplicasets }}"
+            - name: LIST_REPLICASETS
+              value: "{{ .Values.listReplicasets }}"
+            {{ if and .Values.healthProbes (eq .Values.healthProbes.enabled true) }}
+            - name: HEALTH_PROBES_ENABLED
+              value: "{{ .Values.healthProbes.enabled }}"
+            - name: HEALTH_PROBES_PORT
+              value: "{{ .Values.healthProbes.port }}"
+            {{ end }}
+            - name: DISCOVER_K8S_SERVICE_EXTERNAL_IP
+              value: "{{ .Values.discoverK8sServiceExternalIps }}"
+            - name: K8S_CLIENT_DIAL_TIMEOUT_SECONDS
+              value: "{{ .Values.kubernetesClient.dialerTimeoutSec }}"
+            - name: K8S_CLIENT_KEEP_ALIVE_SECONDS
+              value: "{{ .Values.kubernetesClient.keepAliveSec }}"
+            - name: K8S_CLIENT_TIMEOUT_SECONDS
+              value: "{{ .Values.kubernetesClient.timeoutSec }}"
+            - name: MIN_TLS_VERSION
+              value: "{{ .Values.minTLSVersion }}"
+            - name: DEPLOYMENT_NAME
+              value: "k8s-informer-{{ .Values.instance.name }}"
+            - name: RESOURCE_SYNC_TIMEOUT_MINUTES
+              value: "{{ .Values.resourceSyncTimeoutMinutes }}"
+            - name: PAGINATED_INFORMERS
+              value: "{{ .Values.paginatedInformers }}"
+            - name: PAGINATED_INFORMERS_PAGE_SIZE
+              value: "{{ .Values.paginatedInformersPageSize }}"
+            - name: PAGINATED_INFORMERS_PAGINATION_METHOD
+              value: "{{ .Values.paginatedInformersPaginationMethod }}"
+            - name: PAGINATED_INFORMER_MAX_RETRIES
+              value: "{{ .Values.paginatedInformersMaxRetries }}"
+            - name: POPULATE_SERIAL_NUMBER_FROM_SYSTEM_UUID
+              value: "{{ .Values.populateSerialNumberFromSystemUUID }}"
+            - name: BRING_EMPTY_LABELS_AND_ANNOTATIONS
+              value: "{{ .Values.bringEmptyLabelsAndAnnotations }}"
+            - name: SERVER_OS_NORMALIZATION_MAP
+              value: "{{ .Values.serverOsNormalizationMap }}"
+            - name: REPORT_SERVER_OS_VERSION
+              value: "{{ .Values.reportServerOsVersion }}"
+            - name: BRING_NODE_EXTERNAL_IPS
+              value: "{{ .Values.bringNodeExternalIPs }}"
+            - name: BRING_INGRESS_ADDRESSES
+              value: "{{ .Values.bringIngressAddresses }}"
+            {{ if .Values.memoryLimit }}
+            - name: MEMORY_LIMIT
+              valueFrom:
+                resourceFieldRef:
+                  containerName: k8sinformer
+                  resource: limits.memory
+            - name: MEMORY_PRESSURE_THRESHOLD_PCT
+              value: "{{ .Values.memoryPressureThresholdPct }}"
+            {{ end }}
+            {{ if and .Values.ibmLicensing }}
+            - name: IBM_LICENSING_ENABLED
+              value: "{{ .Values.ibmLicensing.enabled }}"
+            - name: IBM_LICENSE_SERVICE_URL
+              value: "{{ .Values.ibmLicensing.ibmLicenseServiceUrl }}"
+            - name: IBM_LICENSING_PAYLOAD_CHUNK_SIZE
+              value: "{{ .Values.ibmLicensing.payloadChunkSize }}"
+            - name: IBM_LICENSING_TIME_WINDOW_DAYS
+              value: "{{ .Values.ibmLicensing.timeWindowDays }}"
+            - name: IBM_LICENSING_NAMESPACE
+              value: "{{ .Values.ibmLicensing.namespace }}"
+            {{ end }}
+          {{ if eq .Values.healthProbes.enabled true }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.healthProbes.port }}
+            initialDelaySeconds: {{ .Values.healthProbes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthProbes.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthProbes.timeoutSeconds }}
+            successThreshold: {{ .Values.healthProbes.successThreshold }}
+            failureThreshold: {{ .Values.healthProbes.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.healthProbes.port }}
+            initialDelaySeconds: {{ .Values.healthProbes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthProbes.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthProbes.timeoutSeconds }}
+            successThreshold: {{ .Values.healthProbes.successThreshold }}
+            failureThreshold: {{ .Values.healthProbes.failureThreshold }}
+            {{ end }}
+          resources:
+            limits:
+              cpu: {{ .Values.cpuLimit }}
+              {{- if .Values.memoryLimit }}
+              memory: {{ .Values.memoryLimit }}
+              {{- end }}
+            requests:
+              cpu:  {{ .Values.cpuRequest }}
+              memory: {{ .Values.memoryRequest }}
+      terminationGracePeriodSeconds: 10

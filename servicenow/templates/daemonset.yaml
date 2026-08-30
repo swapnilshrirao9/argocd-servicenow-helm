@@ -1,0 +1,187 @@
+{{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (or (eq .Values.connectionsDiscovery.method "servicenow") (eq .Values.connectionsDiscovery.method "cilium"))}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: k8s-informer-daemonset-{{ .Values.instance.name }}
+  labels:
+    app: k8s-informer-daemonset-{{ .Values.instance.name }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      name: k8s-informer-daemonset-{{ .Values.instance.name }}
+  template:
+    metadata:
+      labels:
+        name: k8s-informer-daemonset-{{ .Values.instance.name }}
+        {{ if and (eq .Values.secretProvider "azure") (eq .Values.azureVault.vaultType "rbac") }}
+        azure.workload.identity/use: "true"
+        {{ end }}
+    spec:
+      nodeSelector:
+        {{- with .Values.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+      {{ if .Values.connectionsDiscovery.tolerations }}
+      tolerations:
+      {{ .Values.connectionsDiscovery.tolerations | nindent 8 }}
+      {{ end }}
+      automountServiceAccountToken: false
+      {{ if .Values.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      {{ end }}
+      containers:
+        - name: informer-ds
+          imagePullPolicy: Always
+          terminationMessagePolicy: FallbackToLogsOnError
+          image: "{{ .Values.image.dsRepository }}:{{ .Values.image.dsTag }}"
+          securityContext:
+            {{ if .Values.connectionsDiscovery.daemonsetContainerSecurityContext}}
+            {{ .Values.connectionsDiscovery.daemonsetContainerSecurityContext | nindent 12 }}
+            {{ else if eq .Values.connectionsDiscovery.method "cilium" }}
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+            {{ else }}
+            readOnlyRootFilesystem: true
+            {{ if eq .Values.connectionsDiscovery.packetCaptureEnabled false }}
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+            {{ else }}
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_RAW
+            {{ end }}
+            {{ end }}
+          volumeMounts:
+            {{ if eq .Values.connectionsDiscovery.method "cilium" }}
+            - name: hubble-sock
+              mountPath: {{ .Values.connectionsDiscovery.cilium.hubbleSocketPath }}
+              readOnly: true
+            {{ else }}
+            - mountPath: /hostproc
+              name: proc
+              readOnly: true
+            {{ end }}
+            {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") (not (eq .Values.connectionsDiscovery.tls.mode "None")) }}
+            - name: tls
+              readOnly: true
+              mountPath: "/etc/tls"
+            {{ end }}
+          env:
+            - name: INSTANCE
+              value: {{ .Values.instance.name }}
+            - name: PACKET_CAPTURE_ENABLED
+              value: "{{ .Values.connectionsDiscovery.packetCaptureEnabled }}"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: GET_CONNECTIONS_METHOD
+              value: "{{ .Values.connectionsDiscovery.method }}"
+            - name: INFORMER_LAST_RESTART
+              value: "0"
+            - name: MAX_CONNECTIONS
+              value: "{{ .Values.connectionsDiscovery.daemonsetMaxConnections }}"
+            - name: POLLING_INTERVAL_SECONDS
+              value: "{{ .Values.connectionsDiscovery.daemonsetPollingIntervalSeconds }}"
+            - name: MAX_CONNECTIONS_IN_PAYLOAD
+              value: "{{ .Values.connectionsDiscovery.daemonsetMaxConnectionsInPayload }}"
+            - name: CONNECTION_AGING_TIME_MINUTES
+              value: "{{ .Values.connectionsDiscovery.daemonsetConnectionAgingTimeMinutes }}"
+            {{ if eq .Values.connectionsDiscovery.method "servicenow" }}
+            - name: CONNECTIONS_HTTP_SERVER_PORT
+              value: "{{ .Values.connectionsDiscovery.httpServerPort }}"
+            - name: CONNECTIONS_TLS_MODE
+              value: "{{ .Values.connectionsDiscovery.tls.mode }}"
+            - name: CONNECTIONS_CUSTOM_CA
+              value: "{{ .Values.connectionsDiscovery.tls.customCa }}"
+            - name: SCAN_PROC_FILESYSTEM_INTERVAL_SEC
+              value: "{{.Values.connectionsDiscovery.daemonsetScanProcFilesystemIntervalSeconds}}"
+            {{ end }}
+            {{ if eq .Values.connectionsDiscovery.method "cilium" }}
+            - name: CONNECTIONS_HTTP_SERVER_PORT
+              value: "{{ .Values.connectionsDiscovery.httpServerPort }}"
+            - name: CONNECTIONS_TLS_MODE
+              value: "{{ .Values.connectionsDiscovery.tls.mode }}"
+            - name: CONNECTIONS_CUSTOM_CA
+              value: "{{ .Values.connectionsDiscovery.tls.customCa }}"
+            - name: HUBBLE_SOCKET_PATH
+              value: "{{ .Values.connectionsDiscovery.cilium.hubbleSocketPath }}"
+            {{ end }}
+          resources:
+            limits:
+              cpu:  {{ .Values.connectionsDiscovery.daemonset.resources.cpu.limit }}
+              memory: {{ .Values.connectionsDiscovery.daemonset.resources.memory.limit }}
+            requests:
+              cpu:  {{ .Values.connectionsDiscovery.daemonset.resources.cpu.request }}
+              memory: {{ .Values.connectionsDiscovery.daemonset.resources.memory.request }} 
+      {{ if eq .Values.connectionsDiscovery.method "cilium" }}
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      {{ else }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{ end }}
+      {{ if eq .Values.connectionsDiscovery.method "servicenow" }}
+      serviceAccountName: {{ .Values.connectionsDiscovery.daemonsetServiceAccount }}-{{ .Values.instance.name }}
+      {{ end }}
+      volumes:
+        {{ if eq .Values.connectionsDiscovery.method "cilium" }}
+        - name: hubble-sock
+          hostPath:
+            path: {{ .Values.connectionsDiscovery.cilium.hubbleSocketPath }}
+            type: Socket
+        {{ else }}
+        - hostPath:
+            path: /proc
+            type: ""
+          name: proc
+        {{ end }}
+        {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") (not (eq .Values.connectionsDiscovery.tls.mode "None")) }}
+        - name: tls
+        {{ if .Values.secretProvider }}
+          csi:
+          {{ if eq .Values.secretProvider "google"}}
+            driver: {{ .Values.googleSecrets.gkeSecretProvider }}
+          {{ else }}
+            driver: secrets-store.csi.k8s.io
+          {{ end }}
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: k8s-informer-{{ .Values.secretProvider }}-{{ .Values.instance.name }}
+          {{ else }}
+          secret:
+            secretName: k8s-informer-tls-{{ .Values.instance.name }}
+        {{ end }}
+        {{ end }}
+
+{{ end }}

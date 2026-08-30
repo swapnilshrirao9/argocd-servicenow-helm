@@ -1,0 +1,24 @@
+{{ if .Values.customRootCA }}
+{{ if eq .Values.customRootCA.use true }}
+{{ if .Values.customRootCA.certificate }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-informer-custom-root-ca-{{ .Values.instance.name }}
+  labels:
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    helm.sh/hook: pre-install
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  custom_root_ca: |
+{{ .Values.customRootCA.certificate | indent 4 }}
+{{ else }}
+  {{fail "\n\nError: Please provide a custom root CA certificate by --set-file customRootCA.certificate=<file path>\n\n"}}
+{{ end }}
+{{ end }}
+{{ end }}
