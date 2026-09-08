@@ -62,7 +62,7 @@ spec:
               secretProviderClass: k8s-informer-{{ .Values.secretProvider }}-{{ .Values.instance.name }}
         {{ else }}
           secret:
-            secretName: {{ .Values.instanceCredSecretName }}-{{ .Values.instance.name }}
+            secretName: {{ if .Values.instanceCredentials.existingSecret }}{{ .Values.instanceCredentials.existingSecret }}{{ else }}{{ .Values.instanceCredSecretName }}-{{ .Values.instance.name }}{{ end }}
         {{ end }}
         {{ if .Values.customRootCA }}
         {{ if eq .Values.customRootCA.use  true }}
