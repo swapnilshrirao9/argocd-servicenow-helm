@@ -21,7 +21,7 @@ role: servicenow
 
 # The instance to which the informer reports to
 instance:
-  name:
+  name: instanceservice
   domain: service-now.com
 
 # If the image is stored in a private repo, the secret name that holds the repo token should be in this secret within the same namespace
