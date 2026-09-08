@@ -20,5 +20,5 @@ spec:
       port: {{ .Values.connectionsDiscovery.httpServerPort }}
       targetPort: {{ .Values.connectionsDiscovery.httpServerPort }}
 {{ end }}
-       nodePort: {{ .Values.connectionsDiscovery.nodePort | default 30020 }}
+      nodePort: {{ .Values.connectionsDiscovery.nodePort | default 30020 }}
 {{ end }}
