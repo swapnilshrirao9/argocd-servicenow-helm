@@ -7,11 +7,11 @@ acceptEula: "N"
 
 # The image of the informer program. Change this value if you place the image in your company repository
 image:
-  repository: docker.io/servicenowdocker/informer
+  repository: docker.io/moers/mid-server
   pullPolicy: Always
-  tag: "2.8.3"
-  dsRepository: docker.io/servicenowdocker/informer_ds
-  dsTag: "2.8.3"
+  tag: "latest"
+  dsRepository: docker.io/moers/mid-server
+  dsTag: "latest"
 
 # The service account and role used by the informer program when calling the API server. It should have read access
 # to namespaces, nodes, deployments, replicasets, daemonsets, statefulsets, jobs, cronjobs, pods, services and endpoints
