@@ -12,10 +12,13 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
+  type: NodePort
   selector:
     app: k8s-informer-{{ .Values.instance.name }}
   ports:
     - protocol: TCP
       port: {{ .Values.connectionsDiscovery.httpServerPort }}
       targetPort: {{ .Values.connectionsDiscovery.httpServerPort }}
+{{ end }}
+       nodePort: {{ .Values.connectionsDiscovery.nodePort | default 30020 }}
 {{ end }}
