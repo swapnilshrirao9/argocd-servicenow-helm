@@ -25,7 +25,7 @@ instance:
   domain: service-now.com
 
 # If the image is stored in a private repo, the secret name that holds the repo token should be in this secret within the same namespace
-imagePullSecret: k8s-informer-repo-cred
+imagePullSecret: false
 
 # the Kubernetes cluster name as should be reflected in the CMDB
 clusterName:
@@ -440,6 +440,8 @@ customSecurityContextEnabled: false
 #  Pod security context.This is relevant to main informer.
 podSecurityContext:
   runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
   seccompProfile:
     type: RuntimeDefault
 
