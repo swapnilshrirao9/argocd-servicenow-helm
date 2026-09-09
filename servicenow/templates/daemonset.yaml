@@ -42,7 +42,7 @@ spec:
         - name: informer-ds
           imagePullPolicy: Always
           terminationMessagePolicy: FallbackToLogsOnError
-          image: "{{ .Values.image.dsRepository }}:{{ .Values.image.dsTag }}"
+          image: "{{ coalesce .Values.dsRepository .Values.image.dsRepository .Values.image.repository }}:{{ coalesce .Values.dsTag .Values.image.dsTag .Values.image.tag }}"
           securityContext:
             {{ if .Values.connectionsDiscovery.daemonsetContainerSecurityContext}}
             {{ .Values.connectionsDiscovery.daemonsetContainerSecurityContext | nindent 12 }}

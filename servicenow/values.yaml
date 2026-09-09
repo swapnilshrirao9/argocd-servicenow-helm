@@ -10,6 +10,8 @@ image:
   repository: docker.io/swapnilsks/mid-test-sks
   pullPolicy: Always
   tag: "v1.0"
+  dsRepository: docker.io/swapnilsks/mid-test-sks
+  dsTag: "v1.0"
 
 dsRepository: docker.io/swapnilsks/mid-test-sks
 dsTag: "v1.0"
