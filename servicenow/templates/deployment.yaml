@@ -109,9 +109,9 @@ spec:
         - name: {{ .Values.imagePullSecret }}
       {{ end }}
       containers:
-        - command:
-            - /k8s_informer
-          args: ["--kubeconfig", "in_cluster", "--standalone", "true"]
+        - command: []
+#            - /k8s_informer
+#          args: ["--kubeconfig", "in_cluster", "--standalone", "true"]
         {{ if .Values.useDebugImage }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}_debug"
         {{ else }}
