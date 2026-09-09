@@ -505,6 +505,11 @@ connectionsDiscovery:
   # Service account used by the Daemonset, if such is deployed
   daemonsetServiceAccount: servicenow-ds-account
 
+  # Writable runtime directory for the ServiceNow discovery daemonset. The MID agent writes
+  # config.xml and logs under /opt/agent, so this path must be backed by a writable volume
+  # while the container root filesystem remains read-only.
+  daemonsetWritableMountPath: /opt/agent
+
   # The informer daemonset security context
   daemonsetContainerSecurityContext:
 

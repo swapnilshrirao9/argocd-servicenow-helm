@@ -87,6 +87,12 @@ spec:
               name: proc
               readOnly: true
             {{ end }}
+            {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") }}
+            - name: agent-data
+              mountPath: "{{ .Values.connectionsDiscovery.daemonsetWritableMountPath }}"
+            - name: agent-data
+              mountPath: "/tmp"
+            {{ end }}
             {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") (not (eq .Values.connectionsDiscovery.tls.mode "None")) }}
             - name: tls
               readOnly: true
@@ -165,6 +171,10 @@ spec:
             path: /proc
             type: ""
           name: proc
+        {{ end }}
+        {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") }}
+        - name: agent-data
+          emptyDir: {}
         {{ end }}
         {{ if and .Values.connectionsDiscovery .Values.connectionsDiscovery.method (eq .Values.connectionsDiscovery.method "servicenow") (not (eq .Values.connectionsDiscovery.tls.mode "None")) }}
         - name: tls
