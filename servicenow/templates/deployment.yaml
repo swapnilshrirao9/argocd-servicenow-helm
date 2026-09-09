@@ -96,6 +96,8 @@ spec:
           secret:
             secretName: ibm-license-ca-cert
         {{ end }}
+        - name: agent-data
+          emptyDir: {}
       dnsPolicy: {{ .Values.dnsPolicy }}
       serviceAccountName: {{ .Values.serviceAccount }}-{{ .Values.instance.name }}
       securityContext:
@@ -163,6 +165,10 @@ spec:
               readOnly: true
               mountPath: "/etc/ibm-licensing"
             {{ end }}
+            - name: agent-data
+              mountPath: "/opt/agent"
+            - name: agent-data
+              mountPath: "/tmp"
           env:
         {{ if eq .Values.acceptEula "Y" }}
             - name: ACCEPT_EULA
