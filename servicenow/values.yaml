@@ -444,8 +444,9 @@ customSecurityContextEnabled: false
 #  Pod security context.This is relevant to main informer.
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1001
-  runAsGroup: 1001
+  runAsUser: 999
+  runAsGroup: 999
+  fsGroup: 999
   seccompProfile:
     type: RuntimeDefault
 

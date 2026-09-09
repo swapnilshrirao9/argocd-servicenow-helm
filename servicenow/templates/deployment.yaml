@@ -128,8 +128,9 @@ spec:
           terminationMessagePolicy: FallbackToLogsOnError
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1001
-            runAsGroup: 1001
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             seccompProfile:
